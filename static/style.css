@@ -1,0 +1,8 @@
+/* TARS UI Base Styles */
+body {
+    scrollbar-width: thin;
+    scrollbar-color: #333 #0c0c0e;
+}
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #0c0c0e; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TARS - Weed Detection System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0c0c0e;
+            --panel-bg: rgba(25, 25, 28, 0.7);
+            --accent-green: #2ecc71;
+            --text-main: #ffffff;
+            --text-dim: #949494;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        .header {
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid #222;
+        }
+
+        .header h1 { margin: 0; color: var(--accent-green); }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            padding: 20px;
+            flex: 1;
+        }
+
+        .glass-panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .video-feed {
+            width: 100%;
+            border-radius: 8px;
+            background: #000;
+        }
+
+        .metrics {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+        }
+
+        .metric-box {
+            background: rgba(0,0,0,0.3);
+            padding: 10px 15px;
+            border-radius: 6px;
+            border-left: 3px solid var(--accent-green);
+        }
+
+        .metric-label { font-size: 0.8rem; color: var(--text-dim); }
+        .metric-value { font-size: 1.2rem; font-weight: 600; }
+
+        .controls h3 { margin-top: 0; border-bottom: 1px solid #333; padding-bottom: 10px; }
+        .input-group { margin-bottom: 15px; }
+        label { display: block; font-size: 0.9rem; color: var(--text-dim); margin-bottom: 5px; }
+        input { 
+            width: 100%; 
+            background: #1a1a1c; 
+            border: 1px solid #333; 
+            color: white; 
+            padding: 8px; 
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        .btn {
+            background: var(--accent-green);
+            color: black;
+            border: none;
+            padding: 10px;
+            width: 100%;
+            border-radius: 4px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .detection-list {
+            margin-top: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .prediction-item {
+            background: rgba(255,255,255,0.03);
+            padding: 8px;
+            margin-bottom: 5px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>TARS Weed Detection System</h1>
+        <p>Real-time AI monitoring for autonomous agriculture</p>
+    </header>
+
+    <main class="dashboard">
+        <section class="feed-section glass-panel">
+            <div class="metrics">
+                <div class="metric-box">
+                    <div class="metric-label">Latency</div>
+                    <div class="metric-value"><span id="val-latency">0</span> ms</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">Inference FPS</div>
+                    <div class="metric-value"><span id="val-fps">0.0</span></div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">Camera</div>
+                    <div class="metric-value" id="val-cam-status">---</div>
+                </div>
+            </div>
+            <img src="{{ url_for('video_feed') }}" class="video-feed" alt="Video feed">
+        </section>
+
+        <aside class="controls-section glass-panel">
+            <div class="controls">
+                <h3>Settings</h3>
+                <div class="input-group">
+                    <label>Camera Source</label>
+                    <select id="cam-type" style="width: 100%; background: #1a1a1c; color: white; border: 1px solid #333; padding: 8px;">
+                        <option value="ip">IP Camera (DroidCam)</option>
+                        <option value="usb">USB Webcam</option>
+                    </select>
+                </div>
+                <div class="input-group" id="ip-group">
+                    <label>IP Camera URL</label>
+                    <input type="text" id="ip-url" value="{{ config.ip_cam_url }}">
+                </div>
+                <div class="input-group">
+                    <label>Confidence Threshold</label>
+                    <input type="range" id="conf-range" min="0.1" max="0.9" step="0.05" value="{{ config.confidence }}">
+                    <div style="text-align: right;"><span id="conf-val">{{ config.confidence }}</span></div>
+                </div>
+                <button class="btn" onclick="applySettings()">Apply Settings</button>
+            </div>
+
+            <div class="detection-list">
+                <h3>Detected Objects</h3>
+                <div id="predictions-container"></div>
+            </div>
+        </aside>
+    </main>
+
+    <script>
+        function updateTelemetry() {
+            fetch('/get_telemetry')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('val-latency').innerText = data.latency;
+                    document.getElementById('val-fps').innerText = data.fps;
+                    document.getElementById('val-cam-status').innerText = data.cam_backend;
+                    
+                    const container = document.getElementById('predictions-container');
+                    container.innerHTML = '';
+                    data.predictions.forEach(p => {
+                        const div = document.createElement('div');
+                        div.className = 'prediction-item';
+                        div.innerHTML = `<span>${p.class}</span><span>${(p.confidence * 100).toFixed(1)}%</span>`;
+                        container.appendChild(div);
+                    });
+                });
+        }
+
+        function applySettings() {
+            const type = document.getElementById('cam-type').value;
+            const url = document.getElementById('ip-url').value;
+            const conf = document.getElementById('conf-range').value;
+
+            fetch('/update_config', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    camera_source_type: type,
+                    ip_cam_url: url,
+                    confidence: conf
+                })
+            });
+        }
+
+        document.getElementById('conf-range').addEventListener('input', (e) => {
+            document.getElementById('conf-val').innerText = e.target.value;
+        });
+
+        setInterval(updateTelemetry, 1000);
+    </script>
+</body>
+</html>
