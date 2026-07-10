@@ -56,30 +56,31 @@
         }
 
         .metrics {
-            display: flex;
-            gap: 20px;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
             margin-bottom: 15px;
         }
 
         .metric-box {
             background: rgba(0,0,0,0.3);
-            padding: 10px 15px;
+            padding: 10px 12px;
             border-radius: 6px;
             border-left: 3px solid var(--accent-green);
         }
 
         .metric-label { font-size: 0.8rem; color: var(--text-dim); }
-        .metric-value { font-size: 1.2rem; font-weight: 600; }
+        .metric-value { font-size: 1rem; font-weight: 600; }
 
         .controls h3 { margin-top: 0; border-bottom: 1px solid #333; padding-bottom: 10px; }
-        .input-group { margin-bottom: 15px; }
+        .input-group { margin-bottom: 12px; }
         label { display: block; font-size: 0.9rem; color: var(--text-dim); margin-bottom: 5px; }
-        input { 
-            width: 100%; 
-            background: #1a1a1c; 
-            border: 1px solid #333; 
-            color: white; 
-            padding: 8px; 
+        input, select {
+            width: 100%;
+            background: #1a1a1c;
+            border: 1px solid #333;
+            color: white;
+            padding: 8px;
             border-radius: 4px;
             box-sizing: border-box;
         }
@@ -93,12 +94,12 @@
             border-radius: 4px;
             font-weight: 600;
             cursor: pointer;
-            margin-top: 10px;
+            margin-top: 8px;
         }
 
         .detection-list {
-            margin-top: 20px;
-            max-height: 200px;
+            margin-top: 16px;
+            max-height: 220px;
             overflow-y: auto;
         }
 
@@ -109,6 +110,13 @@
             border-radius: 4px;
             display: flex;
             justify-content: space-between;
+            font-size: 0.9rem;
+        }
+
+        .hint {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            margin-top: 6px;
         }
     </style>
 </head>
@@ -130,81 +138,136 @@
                     <div class="metric-value"><span id="val-fps">0.0</span></div>
                 </div>
                 <div class="metric-box">
-                    <div class="metric-label">Camera</div>
-                    <div class="metric-value" id="val-cam-status">---</div>
+                    <div class="metric-label">Detections</div>
+                    <div class="metric-value"><span id="val-detections">0</span> / <span id="val-raw">0</span> raw</div>
                 </div>
             </div>
-            <img src="{{ url_for('video_feed') }}" class="video-feed" alt="Video feed">
+            <img id="video-feed" src="{{ url_for('video_feed', cam=config.active_camera, detect=1 if config.run_detection else 0) }}" class="video-feed" alt="Video feed">
+            <div class="hint">Tip: You can tune in URL too, e.g. <code>/video_feed?cam=camA&detect=1&conf=0.1&min_area=1200&top_k=20</code></div>
         </section>
 
         <aside class="controls-section glass-panel">
             <div class="controls">
                 <h3>Settings</h3>
+
                 <div class="input-group">
-                    <label>Camera Source</label>
-                    <select id="cam-type" style="width: 100%; background: #1a1a1c; color: white; border: 1px solid #333; padding: 8px;">
-                        <option value="ip">IP Camera (DroidCam)</option>
-                        <option value="usb">USB Webcam</option>
+                    <label>Camera</label>
+                    <select id="active-camera">
+                        {% for cam_name, cam_source in camera_sources.items() %}
+                        <option value="{{ cam_name }}" {% if cam_name == config.active_camera %}selected{% endif %}>{{ cam_name }} ({{ cam_source }})</option>
+                        {% endfor %}
                     </select>
                 </div>
-                <div class="input-group" id="ip-group">
-                    <label>IP Camera URL</label>
-                    <input type="text" id="ip-url" value="{{ config.ip_cam_url }}">
+
+                <div class="input-group">
+                    <label><input id="run-detection" type="checkbox" {% if config.run_detection %}checked{% endif %} style="width: auto; margin-right: 8px;">Detection ON</label>
                 </div>
+
                 <div class="input-group">
                     <label>Confidence Threshold</label>
-                    <input type="range" id="conf-range" min="0.1" max="0.9" step="0.05" value="{{ config.confidence }}">
-                    <div style="text-align: right;"><span id="conf-val">{{ config.confidence }}</span></div>
+                    <input type="number" id="conf-input" min="0.01" max="0.95" step="0.01" value="{{ config.confidence }}">
                 </div>
+
+                <div class="input-group">
+                    <label>Min Box Area (px²)</label>
+                    <input type="number" id="min-area" min="0" step="100" value="{{ config.min_area }}">
+                </div>
+
+                <div class="input-group">
+                    <label>Max Box Area (px², 0 disables)</label>
+                    <input type="number" id="max-area" min="0" step="500" value="{{ config.max_area }}">
+                </div>
+
+                <div class="input-group">
+                    <label>Top-K Detections (0 disables)</label>
+                    <input type="number" id="top-k" min="0" step="1" value="{{ config.top_k }}">
+                </div>
+
+                <div class="input-group">
+                    <label>Image Size</label>
+                    <input type="number" id="img-size" min="320" step="32" value="{{ config.img_size }}">
+                </div>
+
+                <div class="input-group">
+                    <label>Max Detections Before Filter</label>
+                    <input type="number" id="max-det" min="1" step="1" value="{{ config.max_det }}">
+                </div>
+
                 <button class="btn" onclick="applySettings()">Apply Settings</button>
             </div>
 
             <div class="detection-list">
                 <h3>Detected Objects</h3>
+                <div class="hint" id="diag-text">before=0 after=0 small=0 large=0</div>
                 <div id="predictions-container"></div>
             </div>
         </aside>
     </main>
 
     <script>
+        function refreshFeed() {
+            const cam = document.getElementById('active-camera').value;
+            const detect = document.getElementById('run-detection').checked ? '1' : '0';
+            const conf = document.getElementById('conf-input').value;
+            const minArea = document.getElementById('min-area').value;
+            const maxArea = document.getElementById('max-area').value;
+            const topK = document.getElementById('top-k').value;
+            const imgSize = document.getElementById('img-size').value;
+            const maxDet = document.getElementById('max-det').value;
+
+            const qs = new URLSearchParams({
+                cam,
+                detect,
+                conf,
+                min_area: minArea,
+                max_area: maxArea,
+                top_k: topK,
+                imgsz: imgSize,
+                max_det: maxDet
+            });
+
+            document.getElementById('video-feed').src = `/video_feed?${qs.toString()}&_ts=${Date.now()}`;
+        }
+
         function updateTelemetry() {
             fetch('/get_telemetry')
                 .then(r => r.json())
                 .then(data => {
                     document.getElementById('val-latency').innerText = data.latency;
                     document.getElementById('val-fps').innerText = data.fps;
-                    document.getElementById('val-cam-status').innerText = data.cam_backend;
-                    
+                    document.getElementById('val-detections').innerText = data.diag.after;
+                    document.getElementById('val-raw').innerText = data.diag.before;
+                    document.getElementById('diag-text').innerText = `before=${data.diag.before} after=${data.diag.after} small=${data.diag.discarded_small} large=${data.diag.discarded_large}`;
+
                     const container = document.getElementById('predictions-container');
                     container.innerHTML = '';
                     data.predictions.forEach(p => {
                         const div = document.createElement('div');
                         div.className = 'prediction-item';
-                        div.innerHTML = `<span>${p.class}</span><span>${(p.confidence * 100).toFixed(1)}%</span>`;
+                        div.innerHTML = `<span>${p.class}</span><span>${(p.confidence * 100).toFixed(1)}% · ${p.area}px²</span>`;
                         container.appendChild(div);
                     });
                 });
         }
 
         function applySettings() {
-            const type = document.getElementById('cam-type').value;
-            const url = document.getElementById('ip-url').value;
-            const conf = document.getElementById('conf-range').value;
+            const payload = {
+                active_camera: document.getElementById('active-camera').value,
+                run_detection: document.getElementById('run-detection').checked,
+                confidence: document.getElementById('conf-input').value,
+                min_area: document.getElementById('min-area').value,
+                max_area: document.getElementById('max-area').value,
+                top_k: document.getElementById('top-k').value,
+                img_size: document.getElementById('img-size').value,
+                max_det: document.getElementById('max-det').value
+            };
 
             fetch('/update_config', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    camera_source_type: type,
-                    ip_cam_url: url,
-                    confidence: conf
-                })
-            });
+                body: JSON.stringify(payload)
+            }).then(() => refreshFeed());
         }
-
-        document.getElementById('conf-range').addEventListener('input', (e) => {
-            document.getElementById('conf-val').innerText = e.target.value;
-        });
 
         setInterval(updateTelemetry, 1000);
     </script>
